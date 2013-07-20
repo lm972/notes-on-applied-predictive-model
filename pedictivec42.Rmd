@@ -1,0 +1,191 @@
+第4章 过拟合和模型调试(第2部分)
+========================================================
+5重抽样技术（resampling）
+
+重抽样技术有多重，基本思路都是类似：取样本子集训练模型，剩余样本估计样本表现，多次重复这样的操作，概括出最终结果。各种重抽样技术的差异主要在于样本子集的取法。
+
+5.1 k折交叉验证（k-Fold Cross-Validation）
+
+样本被随机地分成大约相等的k份，第1份（第1折）用作测试集，剩余的样本用来拟合模型。然后用第2折作为测试集，依次进行下去。使用均值和标准误作为模型表现的估计，选出平均测试误差最小的模型。
+图4.6
+
+k习惯上多取5和10。较大的k得到的模型具有较小的偏倚（预测值与真实值的差），但可能具有较大的方差。特殊如留一交叉验证，当样本数N很大时，虽然得到模型近乎无偏，但是方差很大，同时对多数情况计算也很复杂。
+
+
+k折交叉验证的变体包括：
+分层随机抽样（Stratified random sampling）
+留一交叉验证（leave-one-out cross-validation，LOOCV）
+
+
+5.2一般交叉验证
+
+
+5.3重复训练/测试分划
+“leave-group-out crossvalidation” or “Monte Carlo cross-validation.”
+和k折交叉验证的区别，同一个观测数据可以出现在多个剩余数据子集，验证的重复次数也比交叉验证多。
+
+验证的重复次数，为粗略得到模型表现的估计，25次就可以。如果消除估计的不确定性，可能需要50-200次。
+图4.7
+#就是每次的测试集可以有重复的数据
+
+5.4自助法（bootstrap）
+自助法的基本想法是从训练数据集中有放回的随机取样，得到的数据集的容量与原训练集相同。这样重复多次，可得多个自助法数据集，在其上拟合模型，并检查多次重复实验的拟合结果（没有被自助法选入训练集的样本用来做预测）。
+
+设原训练集容量为N，则每个自助法数据集中不同观测的平均个数约为0.632N。产生的偏倚相当于2折交叉验证（如果训练集样本足够多，这个问题并不很严重）。为缓解偏倚,一种方法叫做632 method（Efron 1983）：
+error rate=(0.632 × simple bootstrap estimate) + (0.368 × apparent error rate)
+
+这个方法的问题是对小样本可能不稳定；存在过拟合时明显误差率接近0从而导致过于乐观的结果。进一步的修正见：Efron and Tibshirani (1997)
+
+#the apparent
+error rate, which is the observed inaccuracy of the fitted
+model applied to the original data points. However, the apparent
+error rate usually underestimates the true error rate. The reason
+is simple: the model is selected to lie near the observed points,
+which is what fitting means, so these points give a falsely
+optimistic picture of the model's true accuracy.
+
+重抽样技术和caret包：
+createDataPartition():repeated training/test splits
+createResamples():bootstrapping
+createFolds():k-fold cross-validation
+createMultiFolds:repeated cross-validation
+
+一个使用对前面的两分类数据集使用5-nn分类的例子。
+```{r}
+library(AppliedPredictiveModeling)
+library(caret)
+data(twoClassData)
+
+
+
+set.seed(1)
+trainingRows <- createDataPartition(classes,p = .80, list= FALSE)
+trainPredictors <- predictors[trainingRows, ]#167个
+trainClasses <- classes[trainingRows]
+testPredictors <- predictors[-trainingRows, ]#41个
+testClasses <- classes[-trainingRows]
+
+trainPredictors <- as.matrix(trainPredictors)
+
+#knn3类似ipred包的ipredknn函数
+knnFit <- knn3(x = trainPredictors, y = trainClasses, k = 5)
+knnFit
+testPredictions <- predict(knnFit, newdata = testPredictors,type = "class")
+error<-which(testClasses!=testPredictions)
+erate<-length(error)/length(testClasses)
+
+#或者（这个类似MASS包的knn函数）
+knnfit<-knn3Train(train=trainPredictors,test=testPredictors,cl=trainClasses,k=5)
+
+
+
+```
+
+
+
+
+7.样本分划的建议
+如果样本是小的，可以采用重复10-折交叉验证，因为方差和偏倚的性质比较好；如果目的是在模型之间选择而非最好性能的指示，可以考虑自助法，因为会有很小的方差。
+如果样本很大，可以考虑简单10-折交叉验证，有可接受的方差，小的偏倚和迅速的计算。
+
+8.模型间的选择
+
+参数调整之后，在多个模型间进行选择，很大程度上要依赖数据和所要解决问题的特点。
+1. Start with several models that are the least interpretable and most flexible,
+such as boosted trees or support vector machines. Across many problem
+domains, these models have a high likelihood of producing the empirically
+optimum results (i.e., most accurate).
+2. Investigate simpler models that are less opaque (e.g., not complete black
+boxes), such as multivariate adaptive regression splines (MARS), partial
+least squares, generalized additive models, or na¨ıve Bayes models.
+3. Consider using the simplest model that reasonably approximates the performance
+of the more complex methods.
+
+这一节给了一些针对具体情况模型比较的结果。
+
+
+
+9.模型调试的操作
+
+To choose tuning parameters using resampling, sets of candidate values are
+evaluated using different resamples of the data. A profile can be created to
+understand the relationship between performance and the parameter values.
+
+e1071包的tune函数，ipred包的errotest函数
+以及caret包的train函数。train函数可用于144个回归和分类模型，除常用的调试参数的技术，
+还具有并行的能力。
+
+（1）对上面两分类数据集使用knn的例子
+```{r}
+knn.tune1 <- train(trainPredictors , trainClasses,
+method = "knn",
+preProcess = c("center", "scale"),
+tuneLength = 10,
+trControl = trainControl(method = "cv"))
+
+knn.predict<-predict(knn.tune1,newdata = testPredictors,type = "prob")
+
+
+```
+按精度（accuracy）的最大值选择模型，k=11。
+
+
+
+（2）信用评分的例子。
+
+GermanCredit是caret包的数据集，信用卡的评分，包括多个预测变量，其中多数为0-1属性变量。分类为Good和Bad两类。
+采用svm建模。
+关于svm模型的参数调试，主要是选择cost参数的值。本例中，采用径向基（RBF）核函数，还需要调试参数sigma，这个参数会影响决策边界的光滑程度，但利用Caputo et al. (2002)的方法，sigma参数可合理估计，所以train()只对cost进行调试。
+
+
+```{r fig.width=7, fig.height=6}
+data(GermanCredit)
+
+#remove near-zero variance predictors then get rid of a few predictors 
+## that duplicate values
+GermanCredit <- GermanCredit[, -nearZeroVar(GermanCredit)]
+GermanCredit$CheckingAccountStatus.lt.0 <- NULL
+GermanCredit$SavingsAccountBonds.lt.100 <- NULL
+GermanCredit$EmploymentDuration.lt.1 <- NULL
+GermanCredit$EmploymentDuration.Unemployed <- NULL
+GermanCredit$Personal.Male.Married.Widowed <- NULL
+GermanCredit$Property.Unknown <- NULL
+GermanCredit$Housing.ForFree <- NULL
+
+#split
+set.seed(100)
+inTrain <- createDataPartition(GermanCredit$Class, p = .8)[[1]]
+GermanCreditTrain <- GermanCredit[ inTrain, ]
+GermanCreditTest  <- GermanCredit[-inTrain, ]
+
+#tuning parameters
+set.seed(1056)
+svmFit <- train(Class ~ .,data = GermanCreditTrain,method = "svmRadial",
+                preProc = c("center", "scale"),tuneLength = 10, 
+                trControl = trainControl(method = "repeatedcv",repeats = 5))
+plot(svmFit, scales = list(x = list(log = 2)))
+
+#prediction
+predictedClasses <- predict(svmFit, GermanCreditTest)
+
+head(predictedClasses)
+```
+默认用来计算模型表现的是basic bootstrap，也可以换为别的方法（这里用的是重复5次的重复交叉验证）
+
+基于重抽样的模型比较
+对信用得分这个例子，采用logistic回归和上面的svm结果进行比较。基础的logistic回归模型没有需要调试的参数，这时train（）就作为使用重抽样方法对模型表现进行度量的一个手段。
+
+resamples()可以用来比较在相同重抽样集合上进行交叉验证的两个模型的结果，也可以对此函数的结果（一个resample类）采用diff函数进行检验。
+
+```{r fig.width=7, fig.height=6}
+set.seed(1056)
+logisticReg <- train(Class ~ .,data = GermanCreditTrain,method = "glm",
+trControl = trainControl(method = "repeatedcv",repeats = 5))
+logisticReg
+resamp <- resamples(list(SVM = svmFit, Logistic = logisticReg))
+summary(resamp)
+modelDifferences <- diff(resamp)
+summary(modelDifferences)#有显著差异
+xyplot(resamp,models = c('SVM', "Logistic"))
+```
+

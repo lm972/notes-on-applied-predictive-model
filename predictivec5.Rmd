@@ -1,0 +1,79 @@
+Chapter 5
+Measuring Performance in Regression Models
+========================================================
+这一章很简单。讨论的是个基本问题，对于输出结果为数值的预测模型，关于预测精度的测量是评价预测模型有效性的典型方法。一种重要的评价方式是可视化模型拟合（特别是残差图）。
+
+1.性能的度量
+
+对输出结果为数值的情况，两种常用的度量模型预测能力的方法：
+（1）RMSE
+就是MSE（均方误差，残差的平方和的平均值）的平方根。表示观测值和拟合值的平均距离。
+
+（2）R^2
+确定系数，R^2 ＝SSR/SST=1-SSE/SST。可以理解为由模型所解释的数据信息的比例。它度量的（观测和预测值）相关性而非精度。由定义看，R^2 依赖于结果的变异（variation）。
+
+
+有些模型仅仅需要得到预测值的顺序（rank），这时可用秩相关（rank correlation）的方法。如Spearman秩相关系数。
+
+
+2.方差-偏倚取舍（The Variance-Bias Trade-off）
+
+偏倚：预测均值与实际均值之差
+方差：预测作为随机变量的方差
+
+MSE的期望（也就是Err,expected squared prediction error）可分解为：
+E（MSE） =(Model Bias)^2  + Model Variance + Noise Variance
+
+证明见http://www.inf.ed.ac.uk/teaching/courses/mlsc/Notes/Lecture4/BiasVariance.pdf
+
+关于这个问题，有一个很详细的讲解：
+http://scott.fortmann-roe.com/docs/BiasVariance.html
+
+下面这个例子是围绕正弦曲线生成随机数据。按两种方式拟合数据，一种分段的直线段，另一种是3个点的移动平均。
+```{r}
+x1<-seq(2,10,by=.2)
+x2<-rnorm(41,0,.1)
+y1<-sin(x1)+x2
+
+y2<-c()
+y2[1]<-y1[1]
+y2[2]<-y1[2]
+for(i in 3:length(y1))
+  {y2[i]=(y1[i]+y1[i-1]+y1[i-2])/3}
+x3<-factor(c(rep(1,21),rep(2,20)))
+s<-data.frame(x1,y1,y2,x3)
+
+
+```
+
+```{r fig.width=7, fig.height=6}
+library(ggplot2)
+ggplot(data=s,aes(x=x1,y=y1))+
+  geom_point(size=3.5,colour='red',alpha=0.6)+
+  geom_line(aes(x=x1,y=y2),size=1,alpha=.8)+
+  geom_segment(aes(x = 2, y = -.2, xend = 6, yend = -.2),colour='blue')+
+  geom_segment(aes(x = 6, y = .25, xend = 10, yend = .25),colour='blue')
+  
+```
+这个玩具例子里，直线段显然模型方差极小而偏倚极大，移动平均线则反之。
+
+It is generally true that more complex models can have very high variance,
+which leads to over-fitting. On the other hand, simple models tend not
+to over-fit, but under-fit if they are not flexible enough to model the true
+relationship (thus high bias). Also, highly correlated predictors can lead to collinearity issues and this can greatly increase the model variance. In subsequent chapters, models will be discussed that can increase the bias in the model to greatly reduce the model variance as a way to mitigate the problem of collinearity. This is referred to as the variance-bias trade-off.
+
+3.关于模型表现的R计算，无论是MSE还是R^2 ，在R中都有很多方法得到，特别是对于线性模型的拟合方法来说，求出这两个值是必须的。
+作者在这里介绍了caret包的一些函数。
+
+```{r fig.width=7, fig.height=6}
+library(caret)
+axisRange <- extendrange(c(y1, y2))
+plot(y1, y2, ylim = axisRange,xlim = axisRange)
+abline(0, 1, col = "darkgrey", lty = 2)
+
+plot(y1, y2, ylab = "residual")
+abline(h = 0, col = "darkgrey", lty = 2)
+R2(y2,y1)
+RMSE(y2, y1)
+```
+

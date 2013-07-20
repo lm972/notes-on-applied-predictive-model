@@ -1,0 +1,127 @@
+第4章 过拟合和模型调试
+========================================================
+
+    本章的主要目的在于讨论评估模型表现的方法论，无此则无法说明预测模型重复使用的精确性。
+    
+    4.1.过拟合
+    
+    过拟合是使用模型学习数据时一个很严重的问题。一个过拟合的模型是被样本数据所约束的，它可以很精确地分类（或预测）样本数据集。但是，问题在于真实的数据样本会有各种问题（比如代表性不够，质量有问题等等），对样本数据的精确预测，意味着当面对新的样本时，模型会有很糟糕的表现。
+    
+    一个简单的例子作为说明：下面是一个简单的2维两分类数据集
+
+```{r}
+library(AppliedPredictiveModeling)
+data(twoClassData)
+
+twoClass<-data.frame(predictors,classes)
+
+
+```
+
+数据表现如下图
+
+
+```{r fig.width=7, fig.height=6}
+library(ggplot2)
+ggplot(data=twoClass,aes(x=PredictorA,y=PredictorB,shape=classes))+
+  geom_point(size=3.1,aes(fill=classes,colour=classes))+
+  scale_shape_manual(values=c(21,22))
+
+
+```
+Estimating the utility of a model by re-predicting the training set is referred to apparent performance of the model (e.g., the apparent error rate)。
+
+
+数据分划
+```{r}
+library(caret)
+set.seed(1)
+trainingRows <- createDataPartition(classes,p = .80,list= FALSE)
+head(trainingRows)
+twoClass.train<-twoClass[trainingRows,]
+```
+
+
+采用svm分类，取不同的成本（cost）函数值，效果：
+在2维的例子很容易看出左边的模型是过拟合的。
+
+```{r}
+library(e1071)#使用svm做分类
+m <- svm(classes~.,cost=1, data = twoClass.train)
+predict.m<- predict(m, data = twoClass.train)
+plot(m, twoClass.train)
+m1<- svm(classes~.,cost=20000,data = twoClass.train)
+predict.m1<- predict(m1, data = twoClass.train)
+plot(m1, twoClass.train)
+
+
+
+densdf <- data.frame(expand.grid(PredictorA = twoClass.train$PredictorA, PredictorB = twoClass.train$PredictorB),
+ z = as.vector(twoClass.train$classes))
+
+densdf$z<-ifelse(densdf$z=='Class1',1.0,0.0)
+densdf$PredictorA<-sort(densdf$PredictorA)
+contour(densdf$PredictorA, densdf$PredictorB, densdf, levels=0.5)
+
+library(ggplot2)
+ggplot(densdf,aes(x=PredictorA,y=PredictorB,z=z))+
+  geom_contour()
+
+
+```
+
+
+4.2.模型调试
+
+许多模型中都有一些重要参数是不能被数据直接估计的。比如，k近邻方法中的k值取为多少合适。太小的k容易过拟合而太大的k容易使模型丧失敏感性。这样的参数就称为
+tuning parameter。上面小节中，svm的cost的选择也是模型参数的调试。
+
+关于最佳参数的选择：
+（1）A general approach that can be applied to almost any model is to define a set of candidate values, generate reliable estimates of model utility across the candidates values, then choose the optimal settings。
+这个方法的流程如下图所示：
+
+ 以k近邻方法为说明：
+ the candidate set might include all odd values of K between 1 and 9 (odd values are used in the two-class situation to avoid ties). The training data would then be resampled and evaluated many times for each tuning parameter value. These results would then be aggregated to find the optimal value of K
+
+（2）Other approaches such as genetic algorithms (Mitchell 1998) or simplex search methods (Olsson and Nelson 1975) can also find optimal tuning parameters。
+
+一个更困难的问题是获得这些备选模型的可靠的模型表现的估计。
+（1）Evaluating the model on a test set is the obvious choice, but, to get reasonable precision of the performance values, the size of the test set may need to be large.
+
+（2）An alternate approach to evaluating a model on a single test set is to
+resample the training set.
+
+在一些原则性的陈述之后，下面是具体的操作。
+
+4.3.数据分划
+
+建模的一般步骤：
+• Pre-processing the predictor data
+• Estimating model parameters
+• Selecting predictors for the model
+• Evaluating model performance
+• Fine tuning class prediction rules (via ROC curves, etc.)
+
+所以，对数据的要求：Given a fixed amount of data, the modeler must decide how to “spend” their data points to accommodate these activities。
+
+如果样本数量很大，可以很从容地分成“training”，“test”，“validation”。如果样本数量小，a strong case can be made that a test set should be avoided because every sample may be needed for model building。
+
+此时，重抽样方法Resampling methods, such as cross-validation,
+can be used to produce appropriate estimates of model performance using the
+training set.
+
+多种划分数据集的方法。
+常用的是随机取样的方法，有助于得到同质的训练集。
+也可以基于预测变量值分划数据，如maximum dissimilarity sampling。
+
+
+关于数据分划和重抽样的R实现
+
+
+sample函数是个简单的办法。caret包的createDataPartition函数可以实现随机分层抽样（stratified random splits），使用时要制定进入训练集的数据的百分比。
+maximum dissimilarity sampling这个方法可以用caret包的maxdissim函数实现。
+关于数据分划的代码见前面4.1节
+
+（caret包也是本书作者的作品）。
+
+

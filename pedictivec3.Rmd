@@ -1,0 +1,165 @@
+CHAPTER 3 Data Pre-processing
+========================================================
+   数据预处理技术是对训练集所做的清洗，整理和变换。数据预处理的目的是让预测模型更有效。本章重点在于数据的变换。
+  数据预处理的需要取决于模型的类型，比如基于树的预测模型对于预测变量数据是不敏感的，回归模型则反之。
+  预测变量如何编码（encoded），称之为特征工程。这会显著影响模型的效果。
+  
+  本章所使用的案例为数据集segmentationOriginal,是对细胞片段进行高容量放映（High-Content Screening）（一种疾病检测手段）的观察结果。
+  关于数据的准备：
+  在这个数据集中，变量Case指示了训练集或测试集。变量Cell表明观测细胞。变量Class表示是否为好的片段（因子值）。另外数据集中有些以Status为名的，表示的是一些二元变量，把它们找出来也去掉。
+  
+```{r}
+library(AppliedPredictiveModeling)
+data(segmentationOriginal)
+segData <- subset(segmentationOriginal, Case == "Train")
+cellID <- segData$Cell
+class <- segData$Class
+case <- segData$Case
+segData<- segData[, -(1:3)]
+statusColNum <- grep("Status", names(segData))
+statusColNum
+segData <- segData[, -statusColNum]
+```
+  1.Data Transformations for Individual Predictors
+  对单变量数据的变换。
+  
+  （1）中心化和标准化
+  这个比较基本了。
+  
+  （2）对偏度（Skewness）的变换
+  对于非中心分布的数据，做适当变换，变为中心的分布(正态分布偏度为0)。
+  基本手段有平方根，逆变换或者对数变换。
+  #关于偏度的计算：
+  
+```{r}
+library(e1071)
+skewness(segData[,1])
+#计算所有的偏度
+seg.skew<-apply(segData,2,skewness)
+head(seg.skew)
+```
+
+  
+  一个比较有力的工具是Box-Cox变换。
+  (http://en.wikipedia.org/wiki/Power_transform）
+  对单变量的Box-Cox变换在R当中有多种解决方案。
+  一个是caret包的函数BoxCoxTrans。
+
+```{r}
+library(caret)
+AreaCh1.bc<- BoxCoxTrans(segData$AreaCh1)
+AreaCh1.bc
+#看看变换前后的数据
+head(segData$AreaCh1)
+predict(AreaCh1.bc,head(segData$AreaCh1))
+```
+另一个比较好用的forecast包的BoxCox函数。
+MASS包也有一个boxcox函数，但这个函数只估计lamda。
+
+
+
+
+ 经过Box-Cox变换数据的前后比较：
+
+```{r fig.width=7, fig.height=6}
+FiberWidthCh1.bc<- BoxCoxTrans(segData$FiberWidthCh1)
+
+FiberWidthCh1.p<-predict(FiberWidthCh1.bc,segData$FiberWidthCh1)
+
+segdata1<-data.frame(FiberWidthCh1.p,class)
+
+
+library(ggplot2)
+ggplot(segData ,aes(x=FiberWidthCh1))+
+geom_bar(fill = I("blue"),colour='black')
+ggplot(segdata1 ,aes(x=FiberWidthCh1.p))+
+geom_bar(fill = I("blue"),colour='black')
+
+```
+
+2.Data Transformations for Multiple Predictors
+多个预测变量的数据变换
+
+(1)解决outliers的变换。
+
+We  generally define outliers as samples that are exceptionally far from the mainstream of the data.
+对离群点要多加小心，究竟是由问题的特殊性质引起的异常，还是一种错误。
+有的预测模型对离群点是有抵抗能力的，如基于树的模型，或支持向量机。
+
+对离群点敏感的模型，需要数据变换，比如空间设计（spatial sign）。
+样本中每个值除以所有值的平方和。
+
+（2）Data Reduction and Feature Extraction
+数据缩减技术可以得到较少的预测变量同时保留大部分原始变量的信息。
+For most data reduction techniques, the new predictors are
+functions of the original predictors; therefore, all the original predictors are still needed to create the surrogate variables. This class of methods is often called signal extraction or feature extraction techniques
+
+主成分（PCA）是其中最常用的一种方法。
+关于PCA：http://site.douban.com/182577/widget/notes/11806604/note/262310174/
+
+书里边关于主成分的那个例子，似乎有问题。他所说的那两个变量的相关系数并非0.93.所以我就取了两个相关系数大的别的变量，画了下图：
+```{r fig.width=7, fig.height=6}
+
+segdata2<-cbind(segData,class)
+
+ggplot(segdata2 ,aes(x=AvgIntenCh1,y=DiffIntenDensityCh1))+
+geom_point(aes(colour=class),size=3)
+#做主成分
+segdata3<-data.frame(segdata2$AvgIntenCh1,segdata2$DiffIntenDensityCh1)
+pcadata3 <- prcomp(segdata3,center = TRUE, scale. = TRUE)
+percentVariance <- pcadata3$sd^2/sum(pcadata3$sd^2)
+percentVariance 
+#主成分得分,即数据变换的结果
+head(pcadata3$x[, 1:2])
+pcadata<-data.frame(pcadata3$x[, 1:2],class)
+ggplot(pcadata ,aes(x=PC1,y=PC2))+
+geom_point(aes(colour=class),size=3)
+```
+
+
+(3)Between-Predictor Correlations
+
+segData数据的相关系数阵。 
+```{r fig.width=7, fig.height=7}
+library(corrplot)
+scor <- cor(segData)
+
+corrplot(scor,order = "hclust", tl.cex = .3)
+```
+
+(4)处理缺失值
+理解为什么这个值缺失很重要。首要的问题是要知道这个缺失值会不会对结果产生影响（这称为informative missingness，会导致模型的显著偏差），例如消费者评级中常会产生这种情况。
+注意缺失值与截尾数据censored data的区别。
+在大型数据集里对非informative missingness的数据可以考虑删除，但对小型数据集删除缺失值的成本过高。对不宜删除缺失值得情况，可以考虑换一种模型（比如基于树的模型）或者对缺失值采用估算的办法（这种估算方法是个不大不小的方向），一种常用且稳健的方法是用knn估计缺失值。
+
+（5）移去预测变量
+在建模之前移去一些有问题的变量可以提升模型表现或让模型更稳定。这些有问题的变量情况，如高度相关的变量（multicollinearity，多重共线性）或带有退化分布degenerate distributions（http://en.wikipedia.org/wiki/Degenerate_distribution）的变量。
+对于后者，考虑只有一个特征点的变量（方差为0，或接近0）。作者举了个文本挖掘中一个关键词只在少量文档的例子。这种特征点的特点是在全部样本中发生的比例极低。
+为滤去这些方差接近0的变量，caret包提供了一个nearZero函数，
+```{r}
+
+nearZeroVar(segData)
+
+```
+
+
+对于存在共线性的变量，多余的变量给模型带来的复杂性远大于它们所提供给模型的信息。在诸如线性回归这样的模型中，还会带来数学处理上的问题。
+在线性回归技术中有几种处理共线性的方法，如方差膨胀因子(VIF)。在一般模型的建模中，一种启发式的（也就是较少理论的）方法是移去最小数量的预测变量以确保保留在模型中变量成对之间的相关性小于某个给定的阈值。主成分也是一种可以考虑用来消除预测变量共线性的方法，但是可能会带来最终结果与解释变量之间难于解释的尴尬局面。
+
+（6）增加预测变量
+如果一个预测变量是属性变量，可以在建模中把这个变量拆成若干个只取值为0-1的哑变量（dummy variable）。每个属性值对应到一个哑变量。比如，信贷评分问题中关于信贷资质的评价。
+
+在《数据挖掘与R语言》（http://book.douban.com/subject/24153573/）
+中，第一个案例海藻分类的预测很好的表现了哑变量的建模。
+
+（7）合并预测变量
+一种数据的预处理方法，结合问题按一个数值型预测变量的取值范围把预测变量的值分为若干组，也就是把数值的变量变为属性的变量。
+比如在疾病诊断中，我们只需要知道体征在某个范围就可以下判断。
+
+
+
+
+
+
+
+

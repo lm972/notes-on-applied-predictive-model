@@ -1,0 +1,84 @@
+Applied Predictive Modeling
+
+这本书讨论统计和机器学习领域可用于预测的一些模型，主要分为回归和分类两类，强调建模过程，写的很细还是有点意思的。
+
+
+
+Chapter 2 A Short Tour of the Predictive Modeling Process
+========================================================
+
+
+这一章是个示例章，通过一个简单的案例，展示构建预测模型的基本过程，特别是展示关于数据“成本”，建立候选模型和选择优化模型的过程。
+本书网站http://appliedpredictivemodeling.com/data/
+本书R包AppliedPredictiveModeling
+本书数据在网站和R包里。
+ 
+Case Study: Predicting Fuel Economy
+------------------------------------------------------------
+这个例子来源于 U.S. Department of Energy’s Office of Energy Efficiency and Renewable Energy and the U.S. Environmental Protection Agency。是对车辆能源使用的记录。本章主要为说明建模过程，只采用其中2010-2011年的两个变量建模。engine displacement（EngDispl）作为预测变量，MPG（FE）作为响应变量。
+
+Themes
+
+建模的基本框架：
+(1)Data splitting and pre-processing
+建模之前的数据准备。
+
+本例首先通过可视化对数据进行探索。对数据分划，把2010年作为 training set,2011年作为test set。
+```{r}
+library(AppliedPredictiveModeling)
+data(FuelEconomy)
+cars2010$year<-as.factor(rep('2010',times=nrow(cars2010)))
+cars2011$year<-as.factor(rep('2011',times=nrow(cars2011)))
+cars1011<-rbind(cars2010,cars2011)
+```
+
+```{r fig.width=7, fig.height=6}
+library(ggplot2)
+qplot(x=EngDispl,y=FE,data=cars1011,facets=.~year)
+```
+有比较明显的线性性，但在预测变量取值较大时也有曲线的趋势。先建立线性回归，然后再利用预测变量的二次多项式回归。
+（2）Predictor Data
+建模需要考虑变量选择的问题。当然，本例做了简化。
+
+（3）Estimating Performance
+建立模型。在使用test set之前，也需要对模型的效果进行一些检验。比如，利用一些统计量，或假设检验，或方差分析等等方法。
+
+```{r}
+fit<-lm(FE~EngDispl,data=cars2010)
+fit1<-lm(FE~EngDispl+I(EngDispl^2),data=cars2010)
+summary(fit)
+summary(fit1)
+```
+也可以把两种模型的效果用图形来看一看。
+
+```{r fig.width=7, fig.height=6}
+#加回归线
+ggplot(data=cars2010,aes(x=EngDispl,y=FE))+
+  geom_point(sharpe=1,colour=3)+
+  geom_smooth(method=lm,se=FALSE)
+#加（带二次项的）回归线
+ggplot(data=cars2010,aes(x=EngDispl,y=FE))+
+  geom_point(sharpe=1,colour=3)+
+  stat_smooth(geom = "smooth",formula = y ~ x+I(x^2), method=lm,se = FALSE)
+```
+（4）Evaluating Several Models
+可以对多种可能的模型建模，并进行评估。
+上面的两个模型中，引入二次项的回归效果更好些，但仍可引入其它的模型。
+如multivariate adaptive regression spline (MARS) model。
+
+
+
+（5）Model Selection
+利用诸如交叉验证这样的方法以及test set来选择一个对解决问题最好的模型。
+下面对两个线性回归模型使用test set的效果。
+
+```{r fig.width=7, fig.height=6}
+
+ggplot(data=cars2011,aes(x=EngDispl,y=FE))+
+  geom_point(sharpe=1,colour=3)+
+  geom_smooth(method=lm,se=FALSE)
+
+ggplot(data=cars2011,aes(x=EngDispl,y=FE))+
+  geom_point(sharpe=1,colour=3)+
+  stat_smooth(geom = "smooth",formula = y ~ x+I(x^2), method=lm,se = FALSE)
+```
